@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+dist/
+build/
+.env
+.env.*
+*.pem
+*.key
+.claude/settings.local.json
+# The engine is not on an index, so only releases/*/runtime can lock it.
+/uv.lock

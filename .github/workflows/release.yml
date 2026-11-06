@@ -1,0 +1,121 @@
+name: release
+
+# The only writer of plugin versions and releases/. An engine release triggers it through
+# repository_dispatch; plugin-only releases use workflow_dispatch.
+on:
+  repository_dispatch:
+    types: [engine-released]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to increase
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      engine_tag:
+        description: Engine release tag to bundle, such as v1.0.8. Leave empty to keep the current engine wheels.
+        type: string
+        required: false
+
+# One release at a time, so two runs never write releases/ or the version from the same base.
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      BUMP: ${{ github.event.inputs.bump || 'patch' }}
+      ENGINE_TAG: ${{ github.event.client_payload.engine_tag || github.event.inputs.engine_tag }}
+      ENGINE_VERSION: ${{ github.event.client_payload.engine_version }}
+      ENGINE_REPOSITORY: ApyGuard/ApyGuard-APIScout
+      TARGETS: darwin-arm64 darwin-x64 linux-x64 win32-x64
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: python -m pip install uv==0.13.7
+
+      - name: Collect engine wheels
+        env:
+          GH_TOKEN: ${{ secrets.ENGINE_RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/engine-wheels"
+          if [ -n "${ENGINE_TAG}" ]; then
+            if [[ ! "${ENGINE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Engine tag must look like v1.2.3: engine_tag=${ENGINE_TAG}" >&2
+              exit 1
+            fi
+            gh release download "${ENGINE_TAG}" \
+              --repo "${ENGINE_REPOSITORY}" \
+              --pattern 'apyguard_engine-*.whl' \
+              --dir "${RUNNER_TEMP}/engine-wheels"
+          else
+            cp releases/*/vendor/apyguard_engine-*.whl "${RUNNER_TEMP}/engine-wheels/"
+          fi
+
+      - name: Bump plugin version
+        id: version
+        run: |
+          set -euo pipefail
+          python scripts/bump_version.py "${BUMP}" >> "${GITHUB_OUTPUT}"
+          python scripts/sync_version.py
+
+      - name: Build plugin wheel
+        run: uv build --wheel --out-dir "${RUNNER_TEMP}/plugin-wheel"
+
+      - name: Assemble platform runtimes
+        id: assemble
+        run: |
+          set -euo pipefail
+          python scripts/assemble_release.py \
+            --engine-wheels "${RUNNER_TEMP}/engine-wheels" \
+            --plugin-wheel "${RUNNER_TEMP}"/plugin-wheel/apyguard_apiscout_plugin-*.whl \
+            --expected-engine-version "${ENGINE_VERSION:-${ENGINE_TAG#v}}" \
+            >> "${GITHUB_OUTPUT}"
+          # --upgrade: uv otherwise keeps every locked version, and a security fix never ships.
+          for target in ${TARGETS}; do
+            uv lock --upgrade --project "releases/${target}/runtime"
+          done
+
+      # Tests import the plugin from the built wheel, not from src/, so they check what ships.
+      - name: Test the linux-x64 runtime
+        env:
+          UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/runtime-env
+        run: |
+          set -euo pipefail
+          uv run --project releases/linux-x64/runtime --locked --with pytest \
+            python -m pytest -q -p no:cacheprovider
+          uv run --project releases/linux-x64/runtime --locked python scripts/smoke_mcp.py
+
+      - name: Commit, tag and push
+        env:
+          PLUGIN_VERSION: ${{ steps.version.outputs.version }}
+          BUNDLED_ENGINE_VERSION: ${{ steps.assemble.outputs.engine_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml CHANGELOG.md .codex-plugin/plugin.json .claude-plugin/plugin.json \
+            .claude-plugin/marketplace.json src/apyguard_apiscout_mcp/__init__.py releases
+          git commit -m "chore: release plugin ${PLUGIN_VERSION} (engine ${BUNDLED_ENGINE_VERSION})"
+          git tag "plugin-v${PLUGIN_VERSION}"
+          # --atomic: if main moved since checkout, neither the commit nor the tag is pushed.
+          git push --atomic origin HEAD:main "plugin-v${PLUGIN_VERSION}"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "plugin-v${PLUGIN_VERSION}" --title "Plugin ${PLUGIN_VERSION}" --generate-notes --verify-tag

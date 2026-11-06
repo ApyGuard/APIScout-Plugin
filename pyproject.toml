@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "apyguard-apiscout-plugin"
+version = "0.1.8"
+description = "Local MCP server for ApyGuard APIScout"
+requires-python = ">=3.10"
+license = "LicenseRef-ApyGuard-Proprietary"
+dependencies = [
+  "apyguard-engine>=1.0.13",
+  # The certifi that sends the access token: earlier releases trust compromised emSign roots.
+  "certifi>=2026.10.18",
+  "mcp>=1.12,<2",
+  "PyYAML>=6.0.1",
+]
+
+[project.scripts]
+apyguard-apiscout-mcp = "apyguard_apiscout_mcp.server:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/apyguard_apiscout_mcp"]
+include = [
+  "src/apyguard_apiscout_mcp/asset_form.html",
+  "src/apyguard_apiscout_mcp/apyguard-logo.png",
+  "src/apyguard_apiscout_mcp/workbench.html",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

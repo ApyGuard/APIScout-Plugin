@@ -1,0 +1,44 @@
+{
+  "name": "apyguard-apiscout-plugin",
+  "version": "0.1.8",
+  "description": "Discover APIs locally, review source-backed findings, open the APIScout Workbench, create ApyGuard assets, and work with OpenAPI documents.",
+  "author": {
+    "name": "ApyGuard",
+    "url": "https://www.apyguard.com"
+  },
+  "homepage": "https://github.com/ApyGuard/APIScout-Plugin",
+  "repository": "https://github.com/ApyGuard/APIScout-Plugin",
+  "license": "LicenseRef-ApyGuard-Proprietary",
+  "keywords": [
+    "api",
+    "openapi",
+    "security",
+    "discovery",
+    "apiscout"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "ApyGuard APIScout",
+    "shortDescription": "Discover and document APIs from local source code.",
+    "longDescription": "Connect an ApyGuard account through a browser sign-in, then inspect local backend projects in the interactive APIScout Workbench, review API inventory findings, gather endpoint evidence, export OpenAPI, and compare specifications without VS Code.",
+    "developerName": "ApyGuard",
+    "category": "Developer Tools",
+    "logo": "./assets/apiscout-logo.png",
+    "composerIcon": "./assets/apiscout-icon.png",
+    "capabilities": [
+      "Authentication",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://www.apyguard.com",
+    "privacyPolicyURL": "https://github.com/ApyGuard/APIScout-Plugin/blob/main/legal/privacy-policy.md",
+    "termsOfServiceURL": "https://github.com/ApyGuard/APIScout-Plugin/blob/main/legal/terms-of-service.md",
+    "defaultPrompt": [
+      "Scan this project with APIScout and summarize the API findings.",
+      "Open the APIScout Workbench for this project.",
+      "List the ApyGuard asset and API collections for this project."
+    ],
+    "brandColor": "#0B1728"
+  }
+}

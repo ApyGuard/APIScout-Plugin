@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "apyguard-apiscout": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp",
+      "args": ["--client", "claude_code"]
+    }
+  }
+}

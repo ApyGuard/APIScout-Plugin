@@ -1,0 +1,26 @@
+{
+  "name": "apyguard-apiscout",
+  "description": "ApyGuard APIScout plugins for local API discovery, source-backed findings, and OpenAPI workflows.",
+  "owner": {
+    "name": "ApyGuard",
+    "url": "https://www.apyguard.com"
+  },
+  "interface": {
+    "displayName": "ApyGuard APIScout Plugins"
+  },
+  "plugins": [
+    {
+      "name": "apyguard-apiscout-plugin",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/ApyGuard/APIScout-Plugin.git",
+        "ref": "plugin-v0.1.8"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -1,0 +1,485 @@
+<div id="root"></div>
+<script type="module">
+  const root = document.getElementById("root");
+  const state = {
+    report: null,
+    view: "overview",
+    severity: "all",
+    requestId: 0,
+    pending: new Map(),
+    notice: "",
+    assetSubmitting: false,
+    assetResult: null,
+    assetLookupLoading: false,
+    assetLookupAttempted: false,
+    assetLookupError: "",
+    existingAsset: null,
+    displayModes: [],
+    displayMode: "inline",
+  };
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+  const request = (method, params) => {
+    const id = ++state.requestId;
+    return new Promise((resolve, reject) => {
+      state.pending.set(id, { resolve, reject });
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    });
+  };
+
+  const getToolResultError = (result) => {
+    if (!result?.isError) return "";
+    const content = Array.isArray(result.content) ? result.content : [];
+    const text = content.find((item) => item?.type === "text")?.text;
+    return text || JSON.stringify(result.structuredContent || result);
+  };
+
+  const getAssetResult = (result) => {
+    const error = getToolResultError(result);
+    if (error) throw new Error(error);
+    const report = result?.structuredContent || result;
+    if (!report || typeof report.asset_id !== "string") {
+      throw new Error(`MCP tool did not return a verified asset report: ${JSON.stringify(result)}`);
+    }
+    return report;
+  };
+
+  const ASSET_RESULT_NOTICES = {
+    created: "ApyGuard asset created and verified.",
+    imported: "ApyGuard documentation imported and verified.",
+    already_imported: "ApyGuard already holds this documentation; nothing new was imported.",
+  };
+
+  const getAssetResultNotice = (result) => {
+    if (result.operation !== "already_imported" && !result.visibility_verified) {
+      return "ApyGuard accepted the asset; listing verification is still pending.";
+    }
+    return ASSET_RESULT_NOTICES[result.operation] ?? "ApyGuard accepted the request.";
+  };
+
+  const getAssetListing = (result) => {
+    const error = getToolResultError(result);
+    if (error) throw new Error(error);
+    const report = result?.structuredContent || result;
+    if (!report || !Array.isArray(report.assets)) {
+      throw new Error(`MCP tool did not return an asset listing: ${JSON.stringify(result)}`);
+    }
+    return report;
+  };
+
+  // MCP Apps hosts size the frame from ui/notifications/size-changed; without it Claude keeps a
+  // small default height. Measured like the ext-apps SDK: max-content height, current width.
+  let lastReportedSize = { width: 0, height: 0 };
+  let sizeFrame = 0;
+  const sendSizeChanged = () => {
+    sizeFrame = 0;
+    const html = document.documentElement;
+    const previousHeight = html.style.height;
+    html.style.height = "max-content";
+    const height = Math.ceil(html.getBoundingClientRect().height);
+    html.style.height = previousHeight;
+    const width = Math.ceil(window.innerWidth);
+    // A hidden frame measures 0; skip it rather than ask the host to collapse the frame. The
+    // observer fires again once the frame is laid out.
+    if (!width || !height) return;
+    // Only send real changes, so the host resizing the frame does not start a feedback loop.
+    if (width === lastReportedSize.width && height === lastReportedSize.height) return;
+    lastReportedSize = { width, height };
+    window.parent.postMessage(
+      { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width, height } },
+      "*",
+    );
+  };
+  const scheduleSizeChanged = () => {
+    if (!sizeFrame) sizeFrame = window.requestAnimationFrame(sendSizeChanged);
+  };
+  const reportSizeChanges = () => {
+    const observer = new ResizeObserver(scheduleSizeChanged);
+    observer.observe(document.documentElement);
+    observer.observe(document.body);
+    scheduleSizeChanged();
+  };
+
+  const applyHostContext = (hostContext) => {
+    if (!hostContext || typeof hostContext !== "object") return;
+    if (Array.isArray(hostContext.availableDisplayModes)) {
+      state.displayModes = hostContext.availableDisplayModes;
+    }
+    if (typeof hostContext.displayMode === "string") state.displayMode = hostContext.displayMode;
+  };
+
+  const toggleDisplayMode = async () => {
+    const mode = state.displayMode === "fullscreen" ? "inline" : "fullscreen";
+    try {
+      const result = await request("ui/request-display-mode", { mode });
+      state.displayMode = typeof result?.mode === "string" ? result.mode : mode;
+    } catch (error) {
+      console.error("APIScout Workbench display mode change failed", { error, mode });
+      state.notice = "The host could not change the Workbench size.";
+    }
+    renderSafely();
+  };
+
+  const connectToHost = async () => {
+    try {
+      const result = await request("ui/initialize", {
+        protocolVersion: "2025-06-18",
+        appInfo: { name: "ApyGuard APIScout Workbench", version: "__APYGUARD_PLUGIN_VERSION__" },
+        appCapabilities: {},
+      });
+      window.parent.postMessage(
+        { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
+        "*",
+      );
+      applyHostContext(result?.hostContext);
+      reportSizeChanges();
+      renderSafely();
+    } catch (error) {
+      console.error("APIScout Workbench host initialization failed", { error });
+    }
+  };
+
+  const isReport = (value) => Boolean(
+    value
+    && typeof value === "object"
+    && typeof value.project_path === "string"
+    && value.openapi
+  );
+
+  const getReportFromValue = (value, visited = new Set()) => {
+    if (isReport(value)) return value;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const report = getReportFromValue(item, visited);
+        if (report) return report;
+      }
+      return null;
+    }
+    if (!value || typeof value !== "object") return null;
+    if (visited.has(value)) return null;
+    visited.add(value);
+    const candidates = [
+      value.structuredContent,
+      value.toolOutput,
+      value.toolResponseMetadata,
+      value.mcp_tool_result,
+      value.call_tool_result,
+      value.result,
+      value.data,
+      value.output,
+      value.params,
+      value.content,
+      value.text,
+    ];
+    for (const candidate of candidates) {
+      const parsed = typeof candidate === "string"
+        ? (() => { try { return JSON.parse(candidate); } catch { return null; } })()
+        : candidate;
+      if (isReport(parsed)) return parsed;
+      const nestedReport = getReportFromValue(parsed, visited);
+      if (nestedReport) return nestedReport;
+    }
+    return null;
+  };
+
+  const getReportFromValues = (values) => {
+    for (const value of values) {
+      const report = getReportFromValue(value);
+      if (report) return report;
+    }
+    return null;
+  };
+
+  const hydrateReportFromHost = (event) => {
+    const globals = event?.detail?.globals;
+    const openai = window.openai;
+    const report = getReportFromValues([
+      openai?.toolOutput,
+      openai?.toolResponseMetadata,
+      globals?.toolOutput,
+      globals?.tool_output,
+      globals?.toolResponseMetadata,
+      globals?.tool_response_metadata,
+      globals,
+    ]);
+    if (!report) return;
+    if (report === state.report) return;
+    if (state.report?.project_path !== report.project_path) {
+      state.assetLookupLoading = false;
+      state.assetLookupAttempted = false;
+      state.assetLookupError = "";
+      state.existingAsset = null;
+      state.assetResult = null;
+    }
+    state.report = report;
+    renderSafely();
+  };
+
+  const sendFollowUp = async (prompt, title) => {
+    try {
+      if (window.openai?.sendFollowUpMessage) {
+        await window.openai.sendFollowUpMessage({ prompt, title });
+        return;
+      }
+      await request("ui/message", { role: "user", content: [{ type: "text", text: prompt }] });
+    } catch (error) {
+      state.notice = `Could not start “${title}”. Return to chat and try again.`;
+      render();
+      console.error("APIScout workbench action failed", { title, error });
+    }
+  };
+
+  const loadAssetState = async () => {
+    if (!state.report || state.assetLookupLoading || state.assetLookupAttempted) return;
+    state.assetLookupLoading = true;
+    state.assetLookupError = "";
+    render();
+    try {
+      const result = await request("tools/call", {
+        name: "list_apyguard_assets",
+        arguments: { project_path: state.report.project_path },
+      });
+      const listing = getAssetListing(result);
+      state.existingAsset = listing.assets[0] || null;
+      state.assetLookupAttempted = true;
+    } catch (error) {
+      state.assetLookupError = String(error?.message ?? error);
+      console.error("ApyGuard asset lookup failed", { error });
+    } finally {
+      state.assetLookupLoading = false;
+      render();
+    }
+  };
+
+  const openAssetTab = () => {
+    state.view = "asset";
+    render();
+    loadAssetState();
+  };
+
+  const callCreateAsset = async (form) => {
+    if (!state.report || state.assetSubmitting) return;
+    const formData = new FormData(form);
+    const existingAsset = state.existingAsset;
+    const assetName = String(formData.get("assetName") ?? existingAsset?.name ?? "").trim();
+    const analyzedApiUrl = String(formData.get("analyzedApiUrl") ?? existingAsset?.api_url ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim() || "Imported from the APIScout Workbench.";
+    const environment = String(formData.get("environment") ?? "").trim() || "existing";
+    if (!existingAsset && (!assetName || !analyzedApiUrl)) {
+      state.notice = "Asset name and analyzed API URL are required.";
+      render();
+      return;
+    }
+    state.assetSubmitting = true;
+    state.notice = existingAsset ? "Importing documentation into the existing ApyGuard asset…" : "Creating ApyGuard asset…";
+    render();
+    try {
+      const result = await request("tools/call", {
+        name: "create_apyguard_asset",
+        arguments: {
+          project_path: state.report.project_path,
+          asset_name: assetName,
+          analyzed_api_url: analyzedApiUrl,
+          description,
+          environment,
+          tags: String(formData.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
+        },
+      });
+      state.assetResult = getAssetResult(result);
+      state.assetSubmitting = false;
+      state.notice = getAssetResultNotice(state.assetResult);
+      state.view = "overview";
+      render();
+    } catch (error) {
+      state.assetSubmitting = false;
+      state.assetResult = null;
+      state.notice = `Could not create the ApyGuard asset: ${String(error?.message ?? error)} You can also share these details in chat and ask the agent to create it.`;
+      render();
+      console.error("ApyGuard asset creation failed", { error });
+    }
+  };
+
+  const methodClass = (method) => `method method-${String(method ?? "").toLowerCase()}`;
+  const severityCount = (findings, severity) => findings.filter((finding) => finding.sensitivityLevel === severity).length;
+  const getEndpoints = (report) => Object.entries(report?.openapi?.paths ?? {}).flatMap(([path, operations]) =>
+    Object.entries(operations ?? {}).filter(([method]) => ["get", "post", "put", "patch", "delete", "head", "options"].includes(method.toLowerCase()))
+      .map(([method, operation]) => ({ path, method: method.toUpperCase(), operation }))
+  );
+  const renderEndpoint = (endpoint) => `<div class="route-item"><button class="route-row" data-action="explain" data-method="${escapeHtml(endpoint.method)}" data-path="${escapeHtml(endpoint.path)}"><span class="${methodClass(endpoint.method)}">${escapeHtml(endpoint.method)}</span><span class="route-path">${escapeHtml(endpoint.path)}</span><span class="route-name">${escapeHtml(endpoint.operation?.summary ?? endpoint.operation?.operationId ?? "Inspect source evidence")}</span><span class="arrow">↗</span></button><div class="route-actions"><button data-action="explain" data-method="${escapeHtml(endpoint.method)}" data-path="${escapeHtml(endpoint.path)}">Explain with AI</button><button data-action="todo" data-method="${escapeHtml(endpoint.method)}" data-path="${escapeHtml(endpoint.path)}">Suggest fix + TODO</button></div></div>`;
+
+  function render() {
+    const report = state.report;
+    if (!report) {
+      root.innerHTML = `<style>${styles}</style><main class="empty-state"><div class="mark"><img src="__APYGUARD_LOGO_DATA_URI__" alt="ApyGuard" /></div><h1>APIScout Workbench</h1><p>Run a project scan, then open this workbench to inspect API readiness.</p></main>`;
+      return;
+    }
+    const findings = report.findings ?? [];
+    const endpoints = getEndpoints(report);
+    const visibleFindings = state.severity === "all" ? findings : findings.filter((finding) => finding.sensitivityLevel === state.severity);
+    const high = severityCount(findings, "high");
+    const medium = severityCount(findings, "medium");
+    const low = severityCount(findings, "low");
+    const overview = `
+      <section class="summary-grid" aria-label="API scan summary">
+        <article class="metric metric-primary"><span>API operations</span><strong>${report.operation_count}</strong><small>${escapeHtml(report.framework ?? "Framework not detected")}</small></article>
+        <article class="metric metric-alert"><span>Needs attention</span><strong>${high + medium}</strong><small>${high} high · ${medium} medium</small></article>
+        <article class="metric"><span>Inventory findings</span><strong>${report.finding_count}</strong><small>${low} low-priority item${low === 1 ? "" : "s"}</small></article>
+      </section>
+      <section class="section panel route-panel">
+        <div class="section-heading"><div><p class="eyebrow">Route spine</p><h2>Detected API surface</h2></div><button class="quiet-action" data-action="view" data-view="endpoints">View all routes <span>→</span></button></div>
+        <div class="route-list">${endpoints.slice(0, 6).map(renderEndpoint).join("") || '<p class="empty-copy">No endpoint operations were detected.</p>'}</div>
+      </section>
+      <section class="section panel finding-preview">
+        <div class="section-heading"><div><p class="eyebrow">Priority lane</p><h2>What to review first</h2></div><button class="quiet-action" data-action="view" data-view="findings">All findings <span>→</span></button></div>
+        ${renderFindings(visibleFindings.slice(0, 3))}
+      </section>`;
+    const findingsView = `<section class="panel section"><div class="section-heading findings-heading"><div><p class="eyebrow">Priority lane</p><h2>Inventory findings</h2></div><div class="segmented" role="group" aria-label="Filter findings">${["all", "high", "medium", "low"].map((severity) => `<button data-action="severity" data-severity="${severity}" class="${state.severity === severity ? "active" : ""}">${severity === "all" ? "All" : `${severity[0].toUpperCase()}${severity.slice(1)} ${severityCount(findings, severity)}`}</button>`).join("")}</div></div>${renderFindings(visibleFindings)}</section>`;
+    const endpointsView = `<section class="panel section"><div class="section-heading"><div><p class="eyebrow">Route spine</p><h2>All operations</h2></div><span class="count-label">${endpoints.length} routes</span></div><div class="route-list">${endpoints.map(renderEndpoint).join("") || '<p class="empty-copy">No endpoint operations were detected.</p>'}</div></section>`;
+    const rawView = `<section class="panel section raw-panel"><div class="section-heading"><div><p class="eyebrow">Scan result</p><h2>Raw JSON</h2></div><button data-action="open-asset-form" class="primary-action">${state.existingAsset ? "Import Documentation" : "Create Asset in ApyGuard"}</button></div><pre class="json-view">${escapeHtml(JSON.stringify(report, null, 2))}</pre></section>`;
+    const assetTabLabel = state.existingAsset ? "Import Documentation" : "Create Asset";
+    let assetView;
+    if (state.assetLookupLoading) {
+      assetView = `<section class="panel section asset-panel"><div class="asset-loading"><p class="eyebrow">ApyGuard integration</p><h2>Checking project asset…</h2><p class="panel-copy">Looking for an existing ApyGuard asset before choosing the next action.</p></div></section>`;
+    } else if (state.assetLookupError) {
+      assetView = `<section class="panel section asset-panel"><div class="section-heading"><div><p class="eyebrow">ApyGuard integration</p><h2>Could not check project asset</h2><p class="panel-copy">The asset lookup failed, so the Workbench will not guess whether this is a create or import operation.</p></div></div><p class="notice">${escapeHtml(state.assetLookupError)}</p><button data-action="retry-asset-lookup" class="primary-action">Retry asset check</button></section>`;
+    } else if (state.existingAsset) {
+      assetView = `<section class="panel section asset-panel"><div class="section-heading"><div><p class="eyebrow">ApyGuard integration</p><h2>Import documentation</h2><p class="panel-copy">This project is already linked to <strong>${escapeHtml(state.existingAsset.name)}</strong>. The next scan will be imported into that asset; no duplicate asset will be created.</p></div><button data-action="view" data-view="raw" class="quiet-action">Open JSON</button></div><div class="existing-asset"><span>${escapeHtml(state.existingAsset.status)}</span><small>${escapeHtml(state.existingAsset.api_url || "API URL unavailable")}</small></div><form id="asset-form" class="asset-form"><label>Tags<input name="tags" type="text" placeholder="payments, public, critical" /></label><div class="form-actions"><button type="button" data-action="view" data-view="overview" class="secondary-action">Cancel</button><button type="submit" class="primary-action" ${state.assetSubmitting ? "disabled" : ""}>${state.assetSubmitting ? "Importing…" : "Import Documentation"}</button></div></form></section>`;
+    } else {
+      assetView = `<section class="panel section asset-panel"><div class="section-heading"><div><p class="eyebrow">ApyGuard integration</p><h2>Create asset from this scan</h2><p class="panel-copy">No ApyGuard asset is linked to this project. The generated OpenAPI JSON will be sent with the information below.</p></div><button data-action="view" data-view="raw" class="quiet-action">Open JSON</button></div><form id="asset-form" class="asset-form"><label>Asset name<input name="assetName" type="text" required placeholder="Customer API" /></label><label>Analyzed API URL<input name="analyzedApiUrl" type="url" required placeholder="https://api.example.com" /></label><label>Description<textarea name="description" rows="3" required placeholder="Describe this API asset"></textarea></label><div class="form-grid"><label>Environment<input name="environment" type="text" required placeholder="production, staging, development" /></label><label>Tags<input name="tags" type="text" placeholder="payments, public, critical" /></label></div><div class="form-actions"><button type="button" data-action="view" data-view="overview" class="secondary-action">Cancel</button><button type="submit" class="primary-action" ${state.assetSubmitting ? "disabled" : ""}>${state.assetSubmitting ? "Creating…" : "Send and Create Asset"}</button></div></form></section>`;
+    }
+    const notice = state.notice ? `<p class="notice" role="status">${escapeHtml(state.notice)}</p>` : "";
+    const content = state.view === "overview" ? overview : state.view === "findings" ? findingsView : state.view === "endpoints" ? endpointsView : state.view === "raw" ? rawView : assetView;
+    const displayToggle = state.displayModes.includes("fullscreen")
+      ? `<button data-action="display-mode" class="display-toggle" aria-label="${state.displayMode === "fullscreen" ? "Exit full screen" : "Expand to full screen"}">${state.displayMode === "fullscreen" ? "Exit full screen" : "Expand"}</button>`
+      : "";
+    root.innerHTML = `<style>${styles}</style><main class="workbench"><header class="hero"><div class="brand"><div class="mark"><img src="__APYGUARD_LOGO_DATA_URI__" alt="ApyGuard" /></div><div><p class="eyebrow">ApyGuard APIScout</p><h1>API Workbench</h1></div></div><div class="hero-side">${displayToggle}<div class="project"><span>PROJECT</span><strong title="${escapeHtml(report.project_path)}">${escapeHtml(report.project_path.split("/").filter(Boolean).pop() ?? report.project_path)}</strong></div></div></header><nav class="tabs" aria-label="Workbench sections">${[["overview", "Overview"], ["findings", "Findings"], ["endpoints", "Endpoints"], ["raw", "JSON"], ["asset", assetTabLabel]].map(([view, label]) => `<button data-action="view" data-view="${view}" class="${state.view === view ? "active" : ""}">${label}</button>`).join("")}</nav>${notice}<div class="content">${content}</div><footer class="footer"><span>Source-first local analysis</span><div class="footer-actions"><button data-action="open-asset-form" class="secondary-action">${state.existingAsset ? "Import Documentation" : "Create Asset in ApyGuard"}</button><button data-action="export" class="export-button">Export OpenAPI <span>↗</span></button></div></footer></main>`;
+  }
+
+  function renderFindings(findings) {
+    if (findings.length === 0) return '<p class="empty-copy">No findings match this filter.</p>';
+    return `<div class="finding-list">${findings.map((finding) => `<article class="finding finding-${escapeHtml(finding.sensitivityLevel)}"><div class="finding-top"><span class="severity">${escapeHtml(finding.sensitivityLevel)}</span><span class="finding-route">${escapeHtml(`${finding.method ?? ""} ${finding.path ?? ""}`.trim())}</span></div><h3>${escapeHtml(finding.title)}</h3><p>${escapeHtml(finding.description)}</p><div class="finding-footer"><span>${escapeHtml(finding.functionName ?? finding.filePath ?? "Source location unavailable")}</span><button data-action="explain" data-method="${escapeHtml(finding.method ?? "GET")}" data-path="${escapeHtml(finding.path)}">Inspect evidence →</button></div></article>`).join("")}</div>`;
+  }
+
+  root.addEventListener("click", async (event) => {
+    const target = event.target.closest("button[data-action]");
+    if (!target) return;
+    const action = target.dataset.action;
+    if (action === "display-mode") {
+      await toggleDisplayMode();
+      return;
+    }
+    if (!state.report) return;
+    if (action === "severity") { state.severity = target.dataset.severity; render(); return; }
+    if (action === "view") {
+      state.view = target.dataset.view;
+      render();
+      if (state.view === "asset") loadAssetState();
+      return;
+    }
+    if (action === "open-asset-form") {
+      openAssetTab();
+      return;
+    }
+    if (action === "retry-asset-lookup") {
+      state.assetLookupAttempted = false;
+      state.assetLookupError = "";
+      loadAssetState();
+      return;
+    }
+    if (action === "explain") {
+      const method = target.dataset.method;
+      const path = target.dataset.path;
+      await sendFollowUp(
+        `Explain the ${method} ${path} endpoint using APIScout source evidence, then open its source_location file at start_line __APYGUARD_SOURCE_LINK_INSTRUCTION__.`,
+        `Inspect ${method} ${path}`,
+      );
+      return;
+    }
+    if (action === "todo") {
+      const method = target.dataset.method;
+      const path = target.dataset.path;
+      await sendFollowUp(
+        `Review the ${method} ${path} endpoint using APIScout source evidence. Produce a concise correction suggestion, clearly separate facts from inference, then add the suggestion as a TODO comment immediately above source_location.start_line in source_location.file_path. Do not implement the fix or change runtime behavior. Preserve the file's syntax and comment style, avoid duplicate TODOs, and open the file at the TODO line __APYGUARD_SOURCE_LINK_INSTRUCTION__. If the evidence does not support a safe correction, explain why and do not add a TODO.`,
+        `Suggest fix and add TODO for ${method} ${path}`,
+      );
+      return;
+    }
+    if (action === "export") {
+      await sendFollowUp(
+        "Export this project's OpenAPI document. Ask me for an output path if one is not already clear.",
+        "Export OpenAPI",
+      );
+    }
+  });
+
+  root.addEventListener("submit", (event) => {
+    if (event.target?.id !== "asset-form") return;
+    event.preventDefault();
+    callCreateAsset(event.target);
+  });
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (!message || message.jsonrpc !== "2.0") return;
+    if (event.source !== window.parent) return;
+    if (message.id !== undefined && state.pending.has(message.id)) {
+      const pending = state.pending.get(message.id);
+      state.pending.delete(message.id);
+      message.error ? pending.reject(message.error) : pending.resolve(message.result);
+      return;
+    }
+    if (message.method === "ui/notifications/host-context-changed") {
+      applyHostContext(message.params);
+      renderSafely();
+      return;
+    }
+    if (message.method === "ui/notifications/tool-result") {
+      const report = getReportFromValue(message.params);
+      if (report) {
+        state.report = report;
+        renderSafely();
+      }
+    }
+  }, { passive: true });
+
+  function renderSafely() {
+    try {
+      render();
+    } catch (error) {
+      console.error("APIScout Workbench render failed", { error });
+      root.innerHTML = `<style>${styles}</style><main class="empty-state"><div class="mark">!</div><h1>APIScout Workbench</h1><p>The scan completed, but the results could not be displayed. Return to chat and try again.</p></main>`;
+    }
+  }
+
+  const styles = `
+    :root { color: #e8edf7; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .existing-asset { display: grid; gap: 5px; margin: 0 0 13px; padding: 10px 12px; border: 1px solid #2d806d; border-radius: 8px; background: #102b2c; color: #c9f7e9; font: 11px ui-sans-serif, system-ui; } .existing-asset small { color: #9bacc6; overflow-wrap: anywhere; } .asset-loading { display: grid; gap: 7px; min-height: 100px; align-content: center; }
+    * { box-sizing: border-box; } button { font: inherit; } .workbench { background: #0a1020; border-radius: 18px; overflow: hidden; min-width: 320px; }
+    .hero { padding: 24px; background: radial-gradient(circle at 86% 0%, #17345b 0, #0a1020 47%); display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    .hero-side { display: flex; gap: 14px; align-items: flex-start; } .display-toggle { padding: 6px 10px; border: 1px solid #2d3a56; border-radius: 7px; color: #c8d5e9; background: #111b30; cursor: pointer; font-size: 10px; white-space: nowrap; } .display-toggle:hover { border-color: #43d5ac; color: #e9fff8; }
+    .brand { display: flex; gap: 12px; align-items: center; } .mark { width: 34px; height: 34px; display: grid; place-items: center; overflow: hidden; border-radius: 9px; background: #f7fbff; color: #08111f; font-family: ui-sans-serif, system-ui; font-weight: 900; } .mark img { width: 100%; height: 100%; display: block; object-fit: contain; }
+    h1, h2, h3, p { margin: 0; } h1 { font-family: ui-sans-serif, system-ui; font-size: 22px; letter-spacing: -.04em; } h2 { font-family: ui-sans-serif, system-ui; font-size: 17px; letter-spacing: -.02em; } h3 { font-family: ui-sans-serif, system-ui; font-size: 14px; }
+    .eyebrow, .project span { color: #8ea0bd; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; } .project { display: grid; gap: 5px; text-align: right; max-width: 180px; } .project strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #c8d5e9; }
+    .tabs { display: flex; gap: 20px; padding: 0 24px; border-bottom: 1px solid #25304a; background: #0d1527; } .tabs button { color: #8ea0bd; padding: 14px 0 11px; background: transparent; border: 0; border-bottom: 2px solid transparent; cursor: pointer; } .tabs button.active { color: #fff; border-color: #43d5ac; }
+    .content { padding: 16px; display: grid; gap: 14px; } .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; } .metric { min-height: 100px; padding: 14px; border: 1px solid #27334d; border-radius: 12px; background: #111b30; display: grid; align-content: space-between; } .metric span, .metric small { color: #9bacc6; font-size: 10px; } .metric strong { font-size: 32px; letter-spacing: -.08em; color: #f6f8fc; } .metric-primary { border-color: #245b66; } .metric-primary strong { color: #43d5ac; } .metric-alert { border-color: #764752; } .metric-alert strong { color: #ff9e9e; }
+    .panel { border: 1px solid #27334d; border-radius: 13px; background: #0d1527; } .section { padding: 16px; } .section-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; } .section-heading > div { display: grid; gap: 4px; } .quiet-action, .finding-footer button { background: transparent; border: 0; color: #72e7c5; cursor: pointer; font-size: 11px; padding: 4px; } .quiet-action span { font-size: 15px; }
+    .route-list { display: grid; } .route-item { border-top: 1px solid #202b43; } .route-item:first-child { border-top: 0; } .route-row { width: 100%; display: grid; grid-template-columns: 53px minmax(100px, 1fr) minmax(80px, 1fr) 18px; gap: 10px; align-items: center; text-align: left; padding: 11px 4px 6px; color: #e8edf7; background: transparent; border: 0; cursor: pointer; } .route-row:hover { background: #14203a; } .route-actions { display: flex; gap: 8px; padding: 0 4px 9px 67px; } .route-actions button { border: 1px solid #2d3a56; border-radius: 6px; padding: 5px 8px; color: #9fead5; background: #111b30; cursor: pointer; font-size: 10px; } .route-actions button:hover { border-color: #43d5ac; background: #14203a; } .method { font-size: 10px; font-weight: 800; padding: 4px 5px; border-radius: 5px; text-align: center; background: #263450; } .method-get { color: #85d0ff; background: #153b55; } .method-post { color: #76e3bb; background: #174936; } .method-delete { color: #ff9fa7; background: #54252e; } .method-put, .method-patch { color: #e0b5ff; background: #3a2855; } .route-path { font-size: 12px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .route-name { color: #8ea0bd; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .arrow { color: #72e7c5; }
+    .finding-list { display: grid; gap: 8px; } .finding { padding: 14px; border-left: 3px solid #677893; background: #111b30; border-radius: 0 10px 10px 0; } .finding-high { border-color: #ff6b78; } .finding-medium { border-color: #f7c96d; } .finding-low { border-color: #79b9f3; } .finding-top, .finding-footer { display: flex; gap: 10px; justify-content: space-between; align-items: center; } .severity { color: #b8c4d8; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; } .finding-route, .finding-footer span { color: #8ea0bd; font-size: 10px; } .finding h3 { margin-top: 8px; color: #f6f8fc; } .finding p { margin-top: 6px; color: #b7c4d9; line-height: 1.5; font-family: ui-sans-serif, system-ui; font-size: 12px; } .finding-footer { margin-top: 10px; } .finding-footer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .segmented { display: flex; border: 1px solid #2d3a56; border-radius: 8px; overflow: hidden; } .segmented button { padding: 7px 9px; border: 0; border-left: 1px solid #2d3a56; background: #111b30; color: #9bacc6; font-size: 10px; cursor: pointer; } .segmented button:first-child { border-left: 0; } .segmented button.active { background: #265d5c; color: #e9fff8; }.count-label { font-size: 11px; color: #8ea0bd; }
+    .notice { margin: 12px 16px 0; padding: 10px 12px; border: 1px solid #764752; border-radius: 8px; color: #ffb6b6; background: #2a1823; font: 12px ui-sans-serif, system-ui; } .footer { padding: 14px 16px; border-top: 1px solid #27334d; display: flex; align-items: center; justify-content: space-between; color: #8395b0; font-size: 10px; } .footer-actions { display: flex; gap: 8px; } .export-button, .primary-action { padding: 8px 10px; border: 1px solid #43d5ac; border-radius: 8px; color: #09131f; background: #43d5ac; cursor: pointer; font-weight: 800; font-size: 11px; } .primary-action:disabled { opacity: .6; cursor: wait; } .secondary-action { padding: 8px 10px; border: 1px solid #2d3a56; border-radius: 8px; color: #c8d5e9; background: #111b30; cursor: pointer; font-size: 11px; } .empty-copy { color: #93a5c0; font: 12px ui-sans-serif, system-ui; padding: 14px 0; }.empty-state { min-height: 240px; background: #0a1020; color: #e8edf7; display: grid; place-content: center; gap: 10px; text-align: center; padding: 30px; border-radius: 18px; }.empty-state .mark { margin: auto; } .diagnostics { width: min(720px, 94vw); margin-top: 18px; padding: 12px; border: 1px solid #2d3a56; border-radius: 10px; background: #0d1527; text-align: left; } .diagnostics summary { cursor: pointer; color: #72e7c5; font-weight: 700; } .diagnostics p { margin: 10px 0; color: #9bacc6; font: 12px ui-sans-serif, system-ui; } .diagnostics pre { max-height: 360px; overflow: auto; margin: 10px 0 0; padding: 10px; color: #c9f7e9; background: #080d19; font: 10px/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; } .json-view { margin: 0; max-height: 560px; overflow: auto; padding: 14px; border: 1px solid #27334d; border-radius: 10px; background: #080d19; color: #c9f7e9; font: 11px/1.55 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; } .panel-copy { color: #9bacc6; font: 12px ui-sans-serif, system-ui; margin-top: 6px; } .asset-form { display: grid; gap: 13px; } .asset-form label { display: grid; gap: 6px; color: #b7c4d9; font: 11px ui-sans-serif, system-ui; } .asset-form input, .asset-form textarea { width: 100%; border: 1px solid #2d3a56; border-radius: 7px; padding: 9px 10px; color: #e8edf7; background: #111b30; font: 12px ui-sans-serif, system-ui; } .asset-form input:focus, .asset-form textarea:focus { outline: 2px solid #43d5ac; outline-offset: 1px; } .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .form-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 4px; }
+    @media (max-width: 540px) { .hero { padding: 18px; }.project { display: none; }.summary-grid { grid-template-columns: 1fr; }.metric { min-height: 80px; grid-template-columns: 1fr auto; align-items: center; }.metric span { grid-column: 1; }.metric strong { grid-column: 2; grid-row: 1 / span 2; }.route-row { grid-template-columns: 51px minmax(0, 1fr) 16px; }.route-name { display: none; }.findings-heading { align-items: flex-start; flex-direction: column; }.segmented { width: 100%; }.segmented button { flex: 1; }.footer { flex-direction: column; align-items: stretch; gap: 10px; }.export-button { width: 100%; } }
+  `;
+  window.addEventListener("openai:set_globals", hydrateReportFromHost);
+  window.addEventListener("openai:tool_output", hydrateReportFromHost);
+  renderSafely();
+  connectToHost();
+  hydrateReportFromHost();
+  window.setTimeout(hydrateReportFromHost, 100);
+  window.setTimeout(hydrateReportFromHost, 500);
+</script>

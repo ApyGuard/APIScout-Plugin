@@ -1,0 +1,213 @@
+<div id="root"></div>
+<script type="module">
+  const root = document.getElementById("root");
+  const state = { projectPath: "", requestId: 0, pending: new Map(), submitting: false, checkingAsset: false, existingAsset: null, notice: "", result: null };
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+  const request = (method, params) => {
+    const id = ++state.requestId;
+    return new Promise((resolve, reject) => {
+      state.pending.set(id, { resolve, reject });
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+    });
+  };
+
+  const getProjectPath = (value) => {
+    if (!value || typeof value !== "object") return "";
+    if (typeof value.project_path === "string") return value.project_path;
+    const candidates = [value.arguments, value.toolInput, value.input, value.data];
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate.project_path === "string") return candidate.project_path;
+    }
+    return "";
+  };
+
+  const setProjectPath = (value) => {
+    const projectPath = getProjectPath(value);
+    if (!projectPath || projectPath === state.projectPath) return;
+    state.projectPath = projectPath;
+    render();
+  };
+
+  const getToolResultError = (result) => {
+    if (!result?.isError) return "";
+    const content = Array.isArray(result.content) ? result.content : [];
+    const text = content.find((item) => item?.type === "text")?.text;
+    return text || JSON.stringify(result.structuredContent || result);
+  };
+
+  const getAssetResult = (result) => {
+    const error = getToolResultError(result);
+    if (error) throw new Error(error);
+    const report = result?.structuredContent || result;
+    if (!report || typeof report.asset_id !== "string") {
+      throw new Error(`MCP tool did not return a verified asset report: ${JSON.stringify(result)}`);
+    }
+    return report;
+  };
+
+  const ASSET_RESULT_NOTICES = {
+    created: "ApyGuard asset created and verified.",
+    imported: "ApyGuard documentation imported and verified.",
+    already_imported: "ApyGuard already holds this documentation; nothing new was imported.",
+  };
+
+  const getAssetResultNotice = (result) => {
+    if (result.operation !== "already_imported" && !result.visibility_verified) {
+      return "ApyGuard accepted the asset; listing verification is still pending.";
+    }
+    return ASSET_RESULT_NOTICES[result.operation] ?? "ApyGuard accepted the request.";
+  };
+
+  const loadExistingAsset = async () => {
+    if (!state.projectPath || state.checkingAsset || state.existingAsset) return;
+    state.checkingAsset = true;
+    try {
+      const result = await request("tools/call", { name: "list_apyguard_assets", arguments: { project_path: state.projectPath } });
+      const error = getToolResultError(result);
+      if (error) throw new Error(error);
+      const report = result?.structuredContent || result;
+      state.existingAsset = report?.assets?.[0] || null;
+    } catch (error) {
+      state.notice = `Could not load the project ApyGuard asset: ${String(error?.message ?? error)}`;
+    } finally {
+      state.checkingAsset = false;
+      render();
+    }
+  };
+
+  // MCP Apps hosts size the frame from ui/notifications/size-changed; without it Claude keeps a
+  // small default height. Measured like the ext-apps SDK: max-content height, current width.
+  let lastReportedSize = { width: 0, height: 0 };
+  let sizeFrame = 0;
+  const sendSizeChanged = () => {
+    sizeFrame = 0;
+    const html = document.documentElement;
+    const previousHeight = html.style.height;
+    html.style.height = "max-content";
+    const height = Math.ceil(html.getBoundingClientRect().height);
+    html.style.height = previousHeight;
+    const width = Math.ceil(window.innerWidth);
+    // A hidden frame measures 0; skip it rather than ask the host to collapse the frame. The
+    // observer fires again once the frame is laid out.
+    if (!width || !height) return;
+    // Only send real changes, so the host resizing the frame does not start a feedback loop.
+    if (width === lastReportedSize.width && height === lastReportedSize.height) return;
+    lastReportedSize = { width, height };
+    window.parent.postMessage(
+      { jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { width, height } },
+      "*",
+    );
+  };
+  const scheduleSizeChanged = () => {
+    if (!sizeFrame) sizeFrame = window.requestAnimationFrame(sendSizeChanged);
+  };
+  const reportSizeChanges = () => {
+    const observer = new ResizeObserver(scheduleSizeChanged);
+    observer.observe(document.documentElement);
+    observer.observe(document.body);
+    scheduleSizeChanged();
+  };
+
+  const connectToHost = async () => {
+    try {
+      await request("ui/initialize", {
+        protocolVersion: "2025-06-18",
+        appInfo: { name: "ApyGuard Asset Creation", version: "__APYGUARD_PLUGIN_VERSION__" },
+        appCapabilities: {},
+      });
+      window.parent.postMessage(
+        { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
+        "*",
+      );
+      reportSizeChanges();
+    } catch (error) {
+      console.error("ApyGuard asset form host initialization failed", { error });
+    }
+  };
+
+  const submitAsset = async (form) => {
+    if (state.submitting) return;
+    const formData = new FormData(form);
+    const projectPath = String(formData.get("projectPath") ?? "").trim();
+    const assetName = String(formData.get("assetName") ?? "").trim();
+    const analyzedApiUrl = String(formData.get("analyzedApiUrl") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+    const environment = String(formData.get("environment") ?? "").trim();
+    const existingAsset = state.existingAsset;
+    if (!projectPath || (!existingAsset && (!assetName || !analyzedApiUrl || !description || !environment))) {
+      state.notice = "Complete all required fields before creating the asset.";
+      render();
+      return;
+    }
+    state.submitting = true;
+    state.notice = existingAsset ? "Importing documentation into the existing ApyGuard asset…" : "Creating the ApyGuard asset…";
+    render();
+    try {
+      const result = await request("tools/call", {
+        name: "create_apyguard_asset",
+        arguments: {
+          project_path: projectPath,
+          asset_name: assetName,
+          analyzed_api_url: analyzedApiUrl,
+          description,
+          environment,
+          tags: String(formData.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
+        },
+      });
+      state.result = getAssetResult(result);
+      state.submitting = false;
+      state.notice = getAssetResultNotice(state.result);
+      render();
+    } catch (error) {
+      state.submitting = false;
+      state.result = null;
+      state.notice = `Could not create the ApyGuard asset: ${String(error?.message ?? error)} You can also share these details in chat and ask the agent to create it.`;
+      render();
+      console.error("ApyGuard asset creation failed", { error });
+    }
+  };
+
+  function render() {
+    const notice = state.notice ? `<p class="notice" role="status">${escapeHtml(state.notice)}</p>` : "";
+    const existing = state.existingAsset;
+    const existingPanel = existing ? `<section class="existing-asset"><strong>Existing ApyGuard asset</strong><span>${escapeHtml(existing.name)} · ${escapeHtml(existing.status)}</span><small>${escapeHtml(existing.api_url || "API URL unavailable")}</small></section>` : "";
+    const fields = existing ? `<p class="hint">This project is already linked to an ApyGuard asset. The new scan will be imported as documentation; no duplicate asset will be created.</p>` : `<label>Asset name<input name="assetName" type="text" required placeholder="Customer API" /></label><label>Analyzed API URL<input name="analyzedApiUrl" type="url" required placeholder="https://api.example.com" /></label><label>Description<textarea name="description" rows="3" required placeholder="Describe this API asset"></textarea></label><div class="form-grid"><label>Environment<input name="environment" type="text" required placeholder="production" /></label><label>Tags<input name="tags" type="text" placeholder="payments, public" /></label></div><p class="hint">The project will be scanned again and its generated OpenAPI JSON will be uploaded to ApyGuard.</p>`;
+    root.innerHTML = `<style>${styles}</style><main class="asset-form-shell"><header><div class="mark"><img src="__APYGUARD_LOGO_DATA_URI__" alt="ApyGuard" /></div><div><p class="eyebrow">ApyGuard APIScout</p><h1>${existing ? "Import Documentation" : "Create ApyGuard Asset"}</h1><p class="copy">${existing ? "Import this project’s generated OpenAPI document into its existing ApyGuard asset." : "Create an ApyGuard asset from this project’s generated OpenAPI document."}</p></div></header>${notice}${existingPanel}<form id="asset-form"><label>Project folder<input name="projectPath" type="text" value="${escapeHtml(state.projectPath)}" required /></label>${fields}<button type="submit" ${state.submitting || state.checkingAsset ? "disabled" : ""}>${state.submitting ? (existing ? "Importing documentation…" : "Creating asset…") : (existing ? "Import Documentation" : "Send and Create Asset")}</button></form></main>`;
+  }
+
+  root.addEventListener("submit", (event) => {
+    if (event.target?.id !== "asset-form") return;
+    event.preventDefault();
+    submitAsset(event.target);
+  });
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window.parent) return;
+    const message = event.data;
+    if (!message || message.jsonrpc !== "2.0") return;
+    if (message.id !== undefined && state.pending.has(message.id)) {
+      const pending = state.pending.get(message.id);
+      state.pending.delete(message.id);
+      message.error ? pending.reject(message.error) : pending.resolve(message.result);
+      return;
+    }
+    if (message.method === "ui/notifications/tool-input") { setProjectPath(message.params); loadExistingAsset(); }
+  }, { passive: true });
+
+  const styles = `
+    :root { color: #e8edf7; font-family: ui-sans-serif, system-ui, sans-serif; } * { box-sizing: border-box; } h1, p { margin: 0; } .asset-form-shell { min-width: 320px; border-radius: 18px; overflow: hidden; padding: 24px; background: radial-gradient(circle at 94% 0%, #17345b 0, #0a1020 45%); } header { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 22px; } .mark { width: 34px; height: 34px; display: grid; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 9px; background: #f7fbff; color: #08111f; font-weight: 900; } .mark img { width: 100%; height: 100%; display: block; object-fit: contain; } .eyebrow { color: #8ea0bd; font: 10px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; } h1 { margin-top: 3px; font-size: 22px; letter-spacing: -.04em; } .copy { margin-top: 6px; color: #9bacc6; font-size: 13px; line-height: 1.45; } form { display: grid; gap: 14px; padding: 18px; border: 1px solid #27334d; border-radius: 13px; background: #0d1527; } label { display: grid; gap: 7px; color: #c8d5e9; font-size: 12px; font-weight: 650; } input, textarea { width: 100%; border: 1px solid #2d3a56; border-radius: 8px; padding: 10px; color: #e8edf7; background: #111b30; font: 13px ui-monospace, monospace; } textarea { resize: vertical; } input:focus, textarea:focus { outline: 2px solid #43d5ac; outline-offset: 1px; } .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .hint { color: #8ea0bd; font-size: 12px; line-height: 1.45; } button { border: 1px solid #43d5ac; border-radius: 8px; padding: 10px 12px; color: #09131f; background: #43d5ac; cursor: pointer; font-weight: 800; font-size: 12px; } button:disabled { cursor: wait; opacity: .65; } .notice { margin: 0 0 14px; padding: 10px 12px; border: 1px solid #2d806d; border-radius: 8px; color: #c9f7e9; background: #102b2c; font-size: 12px; line-height: 1.4; } @media (max-width: 540px) { .asset-form-shell { padding: 18px; } .form-grid { grid-template-columns: 1fr; } }
+  `;
+
+  window.addEventListener("openai:set_globals", () => setProjectPath(window.openai?.toolInput));
+  render();
+  connectToHost();
+  setProjectPath(window.openai?.toolInput);
+  loadExistingAsset();
+</script>

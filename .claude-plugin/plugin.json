@@ -1,0 +1,20 @@
+{
+  "name": "apyguard-apiscout-plugin",
+  "version": "0.1.8",
+  "description": "Connect an ApyGuard account and run APIScout API discovery, interactive workbench, and OpenAPI workflows locally from Claude Code.",
+  "author": {
+    "name": "ApyGuard"
+  },
+  "homepage": "https://github.com/ApyGuard/APIScout-Plugin",
+  "repository": "https://github.com/ApyGuard/APIScout-Plugin",
+  "license": "LicenseRef-ApyGuard-Proprietary",
+  "keywords": [
+    "api",
+    "openapi",
+    "security",
+    "discovery",
+    "apiscout"
+  ],
+  "commands": "./commands/",
+  "mcpServers": "./.claude-plugin/.mcp.json"
+}

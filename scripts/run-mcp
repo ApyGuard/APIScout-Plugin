@@ -1,0 +1,63 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 2 ] || [ "$1" != "--client" ]; then
+  echo "Usage: run-mcp --client {codex|claude_code}" >&2
+  exit 64
+fi
+
+case "$2" in
+  codex|claude_code) ;;
+  *)
+    echo "Unsupported APIScout client: $2" >&2
+    exit 64
+    ;;
+esac
+
+PLUGIN_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+OS_NAME=$(uname -s)
+ARCH_NAME=$(uname -m)
+
+case "${OS_NAME}:${ARCH_NAME}" in
+  Darwin:arm64|Darwin:aarch64) TARGET="darwin-arm64" ;;
+  Darwin:x86_64|Darwin:amd64) TARGET="darwin-x64" ;;
+  Linux:x86_64|Linux:amd64) TARGET="linux-x64" ;;
+  MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64) TARGET="win32-x64" ;;
+  *)
+    echo "Unsupported APIScout runtime platform: ${OS_NAME}/${ARCH_NAME}" >&2
+    exit 69
+    ;;
+esac
+
+RUNTIME_PROJECT="${PLUGIN_ROOT}/releases/${TARGET}/runtime"
+if [ ! -f "${RUNTIME_PROJECT}/pyproject.toml" ] || [ ! -f "${RUNTIME_PROJECT}/uv.lock" ]; then
+  echo "APIScout runtime files for ${TARGET} are missing: ${RUNTIME_PROJECT}" >&2
+  exit 69
+fi
+
+# Clients started outside a login shell often lack the directories uv's installer uses.
+if ! command -v uv >/dev/null 2>&1 && [ -n "${HOME:-}" ]; then
+  PATH="${PATH}:${HOME}/.local/bin:${HOME}/.cargo/bin"
+  export PATH
+fi
+if ! command -v uv >/dev/null 2>&1; then
+  echo "APIScout needs uv, which was not found. Install it from https://docs.astral.sh/uv/getting-started/installation/ and restart the client." >&2
+  exit 69
+fi
+
+# The runtime stays in the user's own cache: in a shared /tmp, another local user could plant the
+# environment this script runs.
+case "${XDG_CACHE_HOME:-}" in
+  /*) CACHE_HOME="${XDG_CACHE_HOME}" ;;
+  *)
+    if [ -z "${HOME:-}" ]; then
+      echo "APIScout needs HOME or an absolute XDG_CACHE_HOME to store its runtime." >&2
+      exit 78
+    fi
+    CACHE_HOME="${HOME}/.cache"
+    ;;
+esac
+
+UV_PROJECT_ENVIRONMENT="${CACHE_HOME}/apyguard/apiscout/runtime-${PLUGIN_ROOT##*/}-${TARGET}"
+export UV_PROJECT_ENVIRONMENT
+APYGUARD_APISCOUT_CLIENT="$2" exec uv run --project "$RUNTIME_PROJECT" --locked apyguard-apiscout-mcp

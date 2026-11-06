@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "apyguard-apiscout": {
+      "command": "./scripts/run-mcp",
+      "args": ["--client", "codex"],
+      "cwd": "."
+    }
+  }
+}
