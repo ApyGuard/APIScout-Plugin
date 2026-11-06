@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "apyguard-apiscout-plugin"
-version = "0.1.8"
+version = "0.1.9"
 description = "Local MCP server for ApyGuard APIScout"
 requires-python = ">=3.10"
 license = "LicenseRef-ApyGuard-Proprietary"

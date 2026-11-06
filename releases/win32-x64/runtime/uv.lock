@@ -26,8 +26,8 @@ wheels = [
 
 [[package]]
 name = "apyguard-apiscout-plugin"
-version = "0.1.8"
-source = { path = "../vendor/apyguard_apiscout_plugin-0.1.8-py3-none-any.whl" }
+version = "0.1.9"
+source = { path = "../vendor/apyguard_apiscout_plugin-0.1.9-py3-none-any.whl" }
 dependencies = [
     { name = "apyguard-engine" },
     { name = "certifi" },
@@ -35,7 +35,7 @@ dependencies = [
     { name = "pyyaml" },
 ]
 wheels = [
-    { filename = "apyguard_apiscout_plugin-0.1.8-py3-none-any.whl", hash = "sha256:99db872ad7f17bafd39929bc9bbf4047cdb600df5d799e7fed9dd22bcc60cb16" },
+    { filename = "apyguard_apiscout_plugin-0.1.9-py3-none-any.whl", hash = "sha256:3209eda9451cdf0c575533f917af4dd183382339b6f07ee9d4dc9c790b14161a" },
 ]
 
 [package.metadata]
@@ -48,7 +48,7 @@ requires-dist = [
 
 [[package]]
 name = "apyguard-apiscout-runtime"
-version = "0.1.8"
+version = "0.1.9"
 source = { virtual = "." }
 dependencies = [
     { name = "apyguard-apiscout-plugin" },
@@ -57,7 +57,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apyguard-apiscout-plugin", path = "../vendor/apyguard_apiscout_plugin-0.1.8-py3-none-any.whl" },
+    { name = "apyguard-apiscout-plugin", path = "../vendor/apyguard_apiscout_plugin-0.1.9-py3-none-any.whl" },
     { name = "apyguard-engine", path = "../vendor/apyguard_engine-1.0.14-cp313-cp313-win_amd64.whl" },
 ]
 

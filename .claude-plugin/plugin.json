@@ -1,6 +1,6 @@
 {
   "name": "apyguard-apiscout-plugin",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Connect an ApyGuard account and run APIScout API discovery, interactive workbench, and OpenAPI workflows locally from Claude Code.",
   "author": {
     "name": "ApyGuard"
