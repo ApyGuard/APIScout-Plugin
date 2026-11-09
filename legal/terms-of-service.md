@@ -43,7 +43,7 @@ You must not use the Plugin to:
 - distribute malware, spyware, ransomware, or unauthorized exploits;
 - interfere with the availability or integrity of systems;
 - upload secrets, credentials, or personal data without authorization;
-- reverse engineer, tamper with, or misuse the Plugin or ApyGuard services; or
+- reverse engineer or tamper with the APIScout Engine or ApyGuard services, or misuse the Plugin; or
 - violate applicable cybersecurity, privacy, export-control, or other laws.
 
 We may suspend or terminate access where we reasonably believe that use violates these Terms, creates a security risk, or is unlawful.
@@ -68,7 +68,9 @@ The Plugin performs local source inspection through a local MCP server. You must
 
 ## 7. Intellectual Property
 
-The Plugin, its software, documentation, design, trademarks, and related materials are owned by or licensed to ApyGuard and are protected by applicable intellectual property laws. Subject to these Terms, ApyGuard grants you a limited, non-exclusive, non-transferable, revocable license to use the Plugin for its intended purpose. You may not sublicense, resell, distribute, reverse engineer, or create derivative works of the Plugin except as expressly permitted by ApyGuard in writing.
+The Plugin's own source code, skills, commands, scripts, and documentation are licensed under the Apache License, Version 2.0, as the LICENSE and NOTICE files in the Plugin's repository state. Those files, not these Terms, set your rights to copy, modify, and distribute that code.
+
+The APIScout Engine bundled with the Plugin, the ApyGuard services, and the ApyGuard and APIScout names, logos, and trademarks are owned by or licensed to ApyGuard and are protected by applicable intellectual property laws. Subject to these Terms, ApyGuard grants you a limited, non-exclusive, non-transferable, revocable license to use the APIScout Engine only as part of the Plugin. You may not sublicense, resell, distribute, reverse engineer, or create derivative works of the APIScout Engine except as expressly permitted by ApyGuard in writing.
 
 ## 8. Third-Party Services
 

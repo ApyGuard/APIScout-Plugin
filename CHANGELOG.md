@@ -5,6 +5,13 @@ workflow moves those lines under the new version.
 
 ## Unreleased
 
+### Changed
+
+- License the plugin's own code under the Apache License, Version 2.0. The
+  bundled APIScout Engine and the ApyGuard and APIScout logos stay proprietary,
+  as `NOTICE` lists, and the Terms of Service now cover only those and the
+  ApyGuard services.
+
 ## 0.1.10 - 2026-11-09
 
 ### Security
