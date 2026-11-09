@@ -429,8 +429,9 @@ Required secrets:
 
 - [ApyGuard APIScout Plugin Privacy Policy](legal/privacy-policy.md)
 - [ApyGuard APIScout Plugin Terms of Service](legal/terms-of-service.md)
-- [ApyGuard APIScout Plugin License](LICENSE): proprietary, not an open-source
-  license
+- [License](LICENSE): the plugin's own code is licensed under the Apache License,
+  Version 2.0. The bundled APIScout Engine wheels and the ApyGuard and APIScout
+  logos are not; [NOTICE](NOTICE) lists them and the terms that apply instead.
 
 The Plugin is intended for authorized API discovery and documentation work. Do
 not scan source code, APIs, or systems that you do not own or have permission

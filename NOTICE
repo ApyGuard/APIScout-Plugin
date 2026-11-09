@@ -1,0 +1,19 @@
+ApyGuard APIScout Plugin
+Copyright 2026 Atlada Cyber Security
+
+The plugin's own source code, skills, commands, scripts, and documentation are
+licensed under the Apache License, Version 2.0, in the LICENSE file.
+
+The Apache License does not cover these files:
+
+- The APIScout Engine wheels, releases/*/vendor/apyguard_engine-*.whl. The
+  engine is proprietary to Atlada Cyber Security. It is licensed only under the
+  license file inside each wheel and the ApyGuard APIScout Plugin Terms of
+  Service (legal/terms-of-service.md), and may be used only as part of this
+  plugin.
+- The ApyGuard and APIScout logos: assets/apiscout-icon.png,
+  assets/apiscout-logo.png, and src/apyguard_apiscout_mcp/apyguard-logo.png.
+
+The ApyGuard and APIScout names and logos belong to Atlada Cyber Security. As
+section 6 of the Apache License states, the license grants no permission to use
+them, except to describe where the plugin comes from.

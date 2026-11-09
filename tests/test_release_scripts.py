@@ -175,18 +175,43 @@ def test_runtime_pyproject_matches_the_committed_release() -> None:
     assert rendered == (runtime_dir / "runtime" / "pyproject.toml").read_text(encoding="utf-8")
 
 
-# The package metadata and both client manifests must match the proprietary LICENSE file.
-@pytest.mark.parametrize("manifest", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
-def test_manifest_declares_the_proprietary_license(manifest: str) -> None:
-    declared = json.loads((REPOSITORY_ROOT / manifest).read_text(encoding="utf-8"))["license"]
-
-    assert declared == "LicenseRef-ApyGuard-Proprietary"
+# The plugin's own code is Apache-2.0. The bundled engine wheels and the logos stay proprietary,
+# and NOTICE says so, because the engine's license defers to the terms of the product bundling it.
+ENGINE_WHEELS_GLOB = "releases/*/vendor/apyguard_engine-*.whl"
 
 
-def test_package_declares_the_proprietary_license() -> None:
+def test_license_file_is_the_apache_license() -> None:
+    license_text = (REPOSITORY_ROOT / "LICENSE").read_text(encoding="utf-8")
+
+    assert license_text.split()[:5] == ["Apache", "License", "Version", "2.0,", "January"]
+
+
+def test_package_declares_the_apache_license() -> None:
     pyproject = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["project"]["license"] == "LicenseRef-ApyGuard-Proprietary"
+    assert pyproject["project"]["license"] == "Apache-2.0"
+
+
+@pytest.mark.parametrize("manifest", [".claude-plugin/plugin.json", ".codex-plugin/plugin.json"])
+def test_manifest_declares_the_plugin_and_engine_licenses(manifest: str) -> None:
+    declared = json.loads((REPOSITORY_ROOT / manifest).read_text(encoding="utf-8"))["license"]
+
+    assert declared == "Apache-2.0 AND LicenseRef-ApyGuard-Proprietary"
+
+
+def test_notice_keeps_every_engine_wheel_out_of_the_apache_license() -> None:
+    notice = (REPOSITORY_ROOT / "NOTICE").read_text(encoding="utf-8")
+
+    assert ENGINE_WHEELS_GLOB in notice
+    assert len(list(REPOSITORY_ROOT.glob(ENGINE_WHEELS_GLOB))) == 4
+
+
+def test_notice_keeps_every_logo_out_of_the_apache_license() -> None:
+    notice = (REPOSITORY_ROOT / "NOTICE").read_text(encoding="utf-8")
+    logos = [path.relative_to(REPOSITORY_ROOT).as_posix() for path in REPOSITORY_ROOT.glob("**/*.png")]
+
+    assert logos
+    assert all(logo in notice for logo in logos), logos
 
 
 def test_assemble_replaces_wheels_and_runtime_for_every_target(tmp_path: Path) -> None:

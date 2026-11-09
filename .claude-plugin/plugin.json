@@ -7,7 +7,7 @@
   },
   "homepage": "https://github.com/ApyGuard/APIScout-Plugin",
   "repository": "https://github.com/ApyGuard/APIScout-Plugin",
-  "license": "LicenseRef-ApyGuard-Proprietary",
+  "license": "Apache-2.0 AND LicenseRef-ApyGuard-Proprietary",
   "keywords": [
     "api",
     "openapi",
