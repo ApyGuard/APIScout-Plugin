@@ -27,6 +27,7 @@ from apyguard_engine.exporters.openapi import (
     to_json,
     to_yaml,
 )
+from apyguard_engine.inference.types import InferenceConfig
 from apyguard_engine.models.types import Endpoint, InventoryFinding, ModelSchema, ScanResult
 from apyguard_engine.parsers.scanner import scan_project
 
@@ -123,11 +124,25 @@ SCAN_PROGRESS_STATES: Mapping[str, ProgressState] = {
     "Cancelled": "stopped",
 }
 ASSET_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+# Given no config, the engine reads APYGUARD_AI_* and may send endpoint source to that
+# AI provider. The plugin never calls an AI provider: the user's own client interprets results.
+NO_AI_INFERENCE = InferenceConfig(
+    enabled=False,
+    provider=None,
+    api_key=None,
+    model=None,
+    base_url=None,
+    local_adapter=None,
+    ca_bundle_path=None,
+    allow_insecure_tls=False,
+    batch_size=1,
+    max_concurrent_flows=1,
+)
 logger = logging.getLogger(__name__)
 
 
 def _scan(project_root: Path) -> ScanResult:
-    return scan_project(str(project_root), inference_config=None)
+    return scan_project(str(project_root), inference_config=NO_AI_INFERENCE)
 
 
 def _serialize_findings(

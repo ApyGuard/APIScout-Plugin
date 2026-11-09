@@ -5,6 +5,12 @@ workflow moves those lines under the new version.
 
 ## Unreleased
 
+### Security
+
+- Keep scans from calling an AI provider set through the engine's
+  `APYGUARD_AI_*` environment variables. Source code now reaches only the AI
+  client you use the plugin with, as the privacy policy says.
+
 ## 0.1.9 - 2026-11-06
 
 ## 0.1.8 - 2026-11-06

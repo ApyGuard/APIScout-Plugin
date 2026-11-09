@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,37 @@ def test_project_review_survives_a_source_file_that_is_not_utf8(project_with_a_l
 
     assert report["reviewed_finding_count"] == 1
     assert report["review_items"][0]["endpoint_context"]["source_excerpt"] is not None
+
+
+@pytest.fixture
+def ai_provider_set_in_the_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[Any, ...]]:
+    """A user whose shell enables the engine's AI explanations, for example for another ApyGuard tool.
+
+    Returns every attempt to resolve a host or open a connection; each attempt is refused.
+    """
+    monkeypatch.setenv("APYGUARD_AI_ENABLED", "true")
+    monkeypatch.setenv("APYGUARD_AI_PROVIDER", "openai")
+    monkeypatch.setenv("APYGUARD_AI_API_KEY", "test-key")
+    monkeypatch.setenv("APYGUARD_AI_MODEL", "test-model")
+    monkeypatch.setenv("APYGUARD_AI_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("APYGUARD_AI_CACHE_DIR", str(tmp_path / "ai-cache"))
+    attempts: list[tuple[Any, ...]] = []
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        attempts.append(args)
+        raise OSError("this test allows no network access")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    return attempts
+
+
+def test_scan_never_calls_an_ai_provider_set_in_the_environment(
+    ai_provider_set_in_the_environment: list[tuple[Any, ...]],
+) -> None:
+    scan_api_project(project_path=str(Path(__file__).parent / "fixtures" / "fastapi-app"))
+
+    assert ai_provider_set_in_the_environment == []
 
 
 def test_tools_run_against_real_fastapi_fixture() -> None:
