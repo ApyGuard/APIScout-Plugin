@@ -11,6 +11,14 @@ workflow moves those lines under the new version.
   `APYGUARD_AI_*` environment variables. Source code now reaches only the AI
   client you use the plugin with, as the privacy policy says.
 
+### Fixed
+
+- Show the existing ApyGuard asset on the asset form as a readable panel, with
+  its name, status and API URL on separate lines, and leave out an unknown
+  status.
+- Keep the asset form from leaving an empty area below it: it no longer draws
+  the full create form while it checks for an existing asset.
+
 ## 0.1.9 - 2026-11-06
 
 ## 0.1.8 - 2026-11-06
