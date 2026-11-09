@@ -5,6 +5,8 @@ workflow moves those lines under the new version.
 
 ## Unreleased
 
+## 0.1.10 - 2026-11-09
+
 ### Security
 
 - Keep scans from calling an AI provider set through the engine's
