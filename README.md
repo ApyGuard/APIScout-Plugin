@@ -220,6 +220,15 @@ exports, and comparisons read and write local files, and do not upload them. The
 plugin stores its runtime under `~/.cache/apyguard/apiscout/`, or under
 `XDG_CACHE_HOME` when that is set.
 
+**What the plugin downloads.** The first time the plugin starts, `uv` builds its
+runtime. The plugin and the engine come from the wheels in this repository. The
+third-party Python packages they depend on come from PyPI
+(`files.pythonhosted.org`), pinned to the exact versions and hashes in the
+platform's `uv.lock`. If Python 3.13 is not installed, `uv` also downloads it from
+Astral's `python-build-standalone` releases on GitHub. Later starts reuse the
+runtime, and an update downloads only the packages that are not already in `uv`'s
+cache.
+
 **To your AI model provider.** Tool results become part of your Codex or Claude
 Code conversation, and your client sends them to its model provider under that
 provider's terms. These results include API routes, findings, local file paths,
