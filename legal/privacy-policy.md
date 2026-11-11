@@ -1,6 +1,6 @@
 # ApyGuard APIScout Plugin Privacy Policy
 
-**Effective date:** November 6, 2026
+**Effective date:** November 11, 2026
 
 This Privacy Policy explains how Atlada Cyber Security, the owner of the ApyGuard brand ("ApyGuard," "we," "us," or "our"), handles information in connection with the ApyGuard APIScout Plugin (the "Plugin"). The Plugin is an integration for Codex and Claude Code that connects an ApyGuard account to local backend source code so that users can discover APIs, review findings, inspect endpoint evidence, export OpenAPI documents, and compare API specifications.
 

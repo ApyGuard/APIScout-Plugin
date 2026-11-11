@@ -11,6 +11,8 @@ workflow moves those lines under the new version.
   bundled APIScout Engine and the ApyGuard and APIScout logos stay proprietary,
   as `NOTICE` lists, and the Terms of Service now cover only those and the
   ApyGuard services.
+- Set the effective date of the privacy policy and terms of service to
+  November 11, 2026.
 
 ## 0.1.10 - 2026-11-09
 

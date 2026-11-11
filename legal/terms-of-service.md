@@ -1,6 +1,6 @@
 # ApyGuard APIScout Plugin Terms of Service
 
-**Effective date:** November 6, 2026
+**Effective date:** November 11, 2026
 
 These Terms of Service ("Terms") govern your access to and use of the ApyGuard APIScout Plugin (the "Plugin"). The Plugin is an integration for Codex and Claude Code that connects an ApyGuard account to local backend source code for API discovery, findings review, endpoint evidence, OpenAPI export, and specification comparison.
 
