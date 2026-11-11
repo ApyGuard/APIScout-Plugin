@@ -5,6 +5,8 @@ workflow moves those lines under the new version.
 
 ## Unreleased
 
+## 0.1.11 - 2026-11-11
+
 ### Changed
 
 - License the plugin's own code under the Apache License, Version 2.0. The

@@ -14,7 +14,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/ApyGuard/APIScout-Plugin.git",
-        "ref": "plugin-v0.1.10"
+        "ref": "plugin-v0.1.11"
       },
       "policy": {
         "installation": "AVAILABLE",
