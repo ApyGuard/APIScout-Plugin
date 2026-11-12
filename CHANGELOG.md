@@ -5,6 +5,8 @@ workflow moves those lines under the new version.
 
 ## Unreleased
 
+## 0.1.12 - 2026-11-12
+
 ## 0.1.11 - 2026-11-11
 
 ### Changed

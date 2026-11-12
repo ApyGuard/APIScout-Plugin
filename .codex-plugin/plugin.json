@@ -1,6 +1,6 @@
 {
   "name": "apyguard-apiscout-plugin",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Discover APIs locally, review source-backed findings, open the APIScout Workbench, create ApyGuard assets, and work with OpenAPI documents.",
   "author": {
     "name": "ApyGuard",

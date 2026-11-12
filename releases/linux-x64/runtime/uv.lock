@@ -26,8 +26,8 @@ wheels = [
 
 [[package]]
 name = "apyguard-apiscout-plugin"
-version = "0.1.11"
-source = { path = "../vendor/apyguard_apiscout_plugin-0.1.11-py3-none-any.whl" }
+version = "0.1.12"
+source = { path = "../vendor/apyguard_apiscout_plugin-0.1.12-py3-none-any.whl" }
 dependencies = [
     { name = "apyguard-engine" },
     { name = "certifi" },
@@ -35,7 +35,7 @@ dependencies = [
     { name = "pyyaml" },
 ]
 wheels = [
-    { filename = "apyguard_apiscout_plugin-0.1.11-py3-none-any.whl", hash = "sha256:5de81412953c06711a036caf712eb9232c35d816cfcd7cf72a44df4432cd5f31" },
+    { filename = "apyguard_apiscout_plugin-0.1.12-py3-none-any.whl", hash = "sha256:ee174d58de334d496b046e4a0c15598831a28ff6fcba38a131f0f69851d53f89" },
 ]
 
 [package.metadata]
@@ -48,7 +48,7 @@ requires-dist = [
 
 [[package]]
 name = "apyguard-apiscout-runtime"
-version = "0.1.11"
+version = "0.1.12"
 source = { virtual = "." }
 dependencies = [
     { name = "apyguard-apiscout-plugin" },
@@ -57,19 +57,19 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "apyguard-apiscout-plugin", path = "../vendor/apyguard_apiscout_plugin-0.1.11-py3-none-any.whl" },
-    { name = "apyguard-engine", path = "../vendor/apyguard_engine-1.0.14-cp313-cp313-manylinux_2_28_x86_64.whl" },
+    { name = "apyguard-apiscout-plugin", path = "../vendor/apyguard_apiscout_plugin-0.1.12-py3-none-any.whl" },
+    { name = "apyguard-engine", path = "../vendor/apyguard_engine-1.0.15-cp313-cp313-manylinux_2_28_x86_64.whl" },
 ]
 
 [[package]]
 name = "apyguard-engine"
-version = "1.0.14"
-source = { path = "../vendor/apyguard_engine-1.0.14-cp313-cp313-manylinux_2_28_x86_64.whl" }
+version = "1.0.15"
+source = { path = "../vendor/apyguard_engine-1.0.15-cp313-cp313-manylinux_2_28_x86_64.whl" }
 dependencies = [
     { name = "pyyaml" },
 ]
 wheels = [
-    { filename = "apyguard_engine-1.0.14-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:e8cdbfb21a1ac9a72bf6b2d0021d140c21432d742c24aac508879c30a10e261f" },
+    { filename = "apyguard_engine-1.0.15-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:767f7b49fd0a804cdd18f467e3c8acd50034aab65c872a2ed3434bcaec61140c" },
 ]
 
 [package.metadata]

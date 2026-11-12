@@ -1,15 +1,15 @@
 [project]
 name = "apyguard-apiscout-runtime"
-version = "0.1.11"
+version = "0.1.12"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-  "apyguard-apiscout-plugin==0.1.11",
-  "apyguard-engine==1.0.14",
+  "apyguard-apiscout-plugin==0.1.12",
+  "apyguard-engine==1.0.15",
 ]
 
 [tool.uv]
 package = false
 
 [tool.uv.sources]
-apyguard-apiscout-plugin = { path = "../vendor/apyguard_apiscout_plugin-0.1.11-py3-none-any.whl" }
-apyguard-engine = { path = "../vendor/apyguard_engine-1.0.14-cp313-cp313-macosx_11_0_x86_64.whl" }
+apyguard-apiscout-plugin = { path = "../vendor/apyguard_apiscout_plugin-0.1.12-py3-none-any.whl" }
+apyguard-engine = { path = "../vendor/apyguard_engine-1.0.15-cp313-cp313-macosx_11_0_x86_64.whl" }
